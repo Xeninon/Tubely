@@ -1,10 +1,13 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -33,19 +36,27 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
 	const maxMemory = 10 << 20
-	r.ParseMultipartForm(maxMemory)
+	if err = r.ParseMultipartForm(maxMemory); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Unable to parse file", err)
+		return
+	}
 
 	file, header, err := r.FormFile("thumbnail")
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Unable to parse form file", err)
+		respondWithError(w, http.StatusBadRequest, "Unable to parse file", err)
 		return
 	}
 	defer file.Close()
 
 	mediaType := header.Header.Values("Content-Type")[0]
-	data, err := io.ReadAll(file)
+	mediaType, _, err = mime.ParseMediaType(mediaType)
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Unable to read file", err)
+		respondWithError(w, http.StatusBadRequest, "Unable to parse media type", err)
+		return
+	}
+
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Thumbnail must be jpeg or png", err)
 		return
 	}
 
@@ -60,9 +71,22 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	dataString := base64.StdEncoding.EncodeToString(data)
-	dataURL := fmt.Sprintf("data:%v;base64,%v", mediaType, dataString)
-	video.ThumbnailURL = &dataURL
+	mediaType, _ = strings.CutPrefix(mediaType, "image/")
+	fileName := videoIDString + "." + mediaType
+	filePath := filepath.Join("assets", fileName)
+	newFile, err := os.Create(filePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Trouble creating file", err)
+		return
+	}
+
+	if _, err = io.Copy(newFile, file); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Trouble copying to new file", err)
+		return
+	}
+
+	thumbnailURL := fmt.Sprintf("http://localhost:%v/assets/%v", cfg.port, fileName)
+	video.ThumbnailURL = &thumbnailURL
 	if err = cfg.db.UpdateVideo(video); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to update video to database", err)
 	}
