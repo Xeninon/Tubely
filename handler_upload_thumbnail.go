@@ -64,20 +64,20 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Video not found in database", err)
+		respondWithError(w, http.StatusNotFound, "Video not found", err)
 		return
 	}
 
 	if video.UserID != userID {
-		respondWithError(w, http.StatusUnauthorized, "Can't delete another user's video", err)
+		respondWithError(w, http.StatusUnauthorized, "Can't edit another user's video", err)
 		return
 	}
 
 	b := make([]byte, 32)
 	rand.Read(b)
 	base64String := base64.RawURLEncoding.EncodeToString(b)
-	mediaType, _ = strings.CutPrefix(mediaType, "image/")
-	fileName := base64String + "." + mediaType
+	media, _ := strings.CutPrefix(mediaType, "image/")
+	fileName := base64String + "." + media
 	filePath := filepath.Join("assets", fileName)
 	newFile, err := os.Create(filePath)
 	if err != nil {
@@ -94,6 +94,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	video.ThumbnailURL = &thumbnailURL
 	if err = cfg.db.UpdateVideo(video); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to update video to database", err)
+		return
 	}
 
 	respondWithJSON(w, http.StatusOK, video)
