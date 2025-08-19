@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
+	"github.com/Xeninon/Tubely/internal/auth"
 	"github.com/google/uuid"
 )
 

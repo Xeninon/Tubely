@@ -10,8 +10,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Xeninon/Tubely/internal/auth"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
 )
 
@@ -91,11 +91,26 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to fetch aspect ratio", err)
+		return
+	}
+
+	var prefix string
+	switch aspectRatio {
+	case "16:9":
+		prefix = "landscape"
+	case "9:16":
+		prefix = "portrait"
+	case "other":
+		prefix = "other"
+	}
 	b := make([]byte, 32)
 	rand.Read(b)
 	base64String := base64.RawURLEncoding.EncodeToString(b)
 	media, _ := strings.CutPrefix(mediaType, "video/")
-	fileName := base64String + "." + media
+	fileName := prefix + "/" + base64String + "." + media
 	input := s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &fileName,
