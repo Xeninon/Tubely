@@ -78,6 +78,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	_, err = io.Copy(assetFile, file)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't copy file", err)
+		return
 	}
 
 	thumbnailURL := fmt.Sprintf("http://localhost:%s/assets/%s", cfg.port, fileName)
