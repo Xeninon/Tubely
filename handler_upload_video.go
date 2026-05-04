@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
@@ -80,7 +83,23 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s3Key := getFileName(mediaType)
+	ratio, err := getVideoAspectRatio(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't get aspect ratio", err)
+		return
+	}
+
+	var prefix string
+	switch ratio {
+	case "16:9":
+		prefix = "landscape"
+	case "9:16":
+		prefix = "portrait"
+	case "other":
+		prefix = "other"
+	}
+
+	s3Key := prefix + "/" + hexFileName(mediaType)
 	objectParams := s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &s3Key,
@@ -101,4 +120,41 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondWithJSON(w, http.StatusOK, video)
+}
+
+func getVideoAspectRatio(filePath string) (string, error) {
+	cmd := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filePath)
+	var b bytes.Buffer
+	cmd.Stdout = &b
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+
+	var output cmdOut
+	err = json.Unmarshal(b.Bytes(), &output)
+	if err != nil {
+		return "", err
+	}
+
+	dimensionRatio := output.Streams[0].Width / output.Streams[0].Height
+	fmt.Println(dimensionRatio)
+	if dimensionRatio > (16.0/9.0)-0.2 && dimensionRatio < (16.0/9.0)+0.2 {
+		return "16:9", nil
+	}
+
+	if dimensionRatio > (9.0/16.0)-0.2 && dimensionRatio < (16.0/9.0)+0.2 {
+		return "9:16", nil
+	}
+
+	return "other", nil
+}
+
+type cmdOut struct {
+	Streams []stream `json:"streams"`
+}
+
+type stream struct {
+	Width  float64 `json:"width"`
+	Height float64 `json:"height"`
 }

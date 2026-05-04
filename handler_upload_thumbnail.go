@@ -66,7 +66,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	fileName := getFileName(mediaType)
+	fileName := hexFileName(mediaType)
 	assetPath := filepath.Join(cfg.assetsRoot, fileName)
 	assetFile, err := os.Create(assetPath)
 	if err != nil {
@@ -91,7 +91,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	respondWithJSON(w, http.StatusOK, video)
 }
 
-func getFileName(mediaType string) string {
+func hexFileName(mediaType string) string {
 	key := make([]byte, 32)
 	rand.Read(key)
 	name := base64.RawURLEncoding.EncodeToString(key)
