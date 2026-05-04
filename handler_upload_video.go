@@ -68,7 +68,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "Couldn't create asset", err)
 		return
 	}
-	defer os.Remove("tubely-upload.mp4")
+	defer os.Remove(tempFile.Name())
 	defer tempFile.Close()
 
 	_, err = io.Copy(tempFile, file)
@@ -89,6 +89,20 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	processedPath, err := processVideoForFastStart(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't process video", err)
+		return
+	}
+
+	processedFile, err := os.Open(processedPath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "couldn't open processed video", err)
+		return
+	}
+	defer os.Remove(processedFile.Name())
+	defer processedFile.Close()
+
 	var prefix string
 	switch ratio {
 	case "16:9":
@@ -103,7 +117,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	objectParams := s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &s3Key,
-		Body:        tempFile,
+		Body:        processedFile,
 		ContentType: &mimeType,
 	}
 	_, err = cfg.s3Client.PutObject(r.Context(), &objectParams)
@@ -122,6 +136,17 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	respondWithJSON(w, http.StatusOK, video)
 }
 
+func processVideoForFastStart(filePath string) (string, error) {
+	outputPath := filePath + ".processing"
+	cmd := exec.Command("ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", outputPath)
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+
+	return outputPath, nil
+}
+
 func getVideoAspectRatio(filePath string) (string, error) {
 	cmd := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filePath)
 	var b bytes.Buffer
@@ -138,7 +163,6 @@ func getVideoAspectRatio(filePath string) (string, error) {
 	}
 
 	dimensionRatio := output.Streams[0].Width / output.Streams[0].Height
-	fmt.Println(dimensionRatio)
 	if dimensionRatio > (16.0/9.0)-0.2 && dimensionRatio < (16.0/9.0)+0.2 {
 		return "16:9", nil
 	}
